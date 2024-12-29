@@ -1,0 +1,131 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import LabelEncoder
+
+# Load CSV data
+data = pd.read_csv('/content/climatedata.csv')  # Ensure this CSV file has a 'year' column with 'YYYY-MM' format
+
+# Preprocessing1k
+# Ensure 'year' column exists and extract year and month
+if 'year' in data.columns:
+    # Extract year and month from the 'year' column (which has format 'YYYY-MM')
+    data['year'] = pd.to_datetime(data['year'], format='%Y-%m')  # Convert 'year' to datetime format
+    data['month'] = data['year'].dt.month  # Extract month from the 'year' column
+    data['year'] = data['year'].dt.year  # Extract year as an integer
+else:
+    print("Error: 'year' column is missing from the dataset.")
+    exit()
+
+# Ensure 'location' column exists and encode it
+if 'location' in data.columns:
+    le = LabelEncoder()
+    data['location'] = le.fit_transform(data['location'])
+else:
+    print("Error: 'location' column is missing from the dataset.")
+    exit()
+
+# Drop any rows with missing values
+data = data.dropna()
+
+# Features and target variable
+features = data[['year', 'month', 'location', 'humidity', 'pollution', 'rainfall']]
+target = data['temperature']
+
+# Split the data
+X_train, X_test, y_train, y_test = train_test_split(features, target, test_size=0.2, random_state=42)
+
+# Train the model
+model = RandomForestRegressor(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+
+# Evaluate the model
+y_pred = model.predict(X_test)
+mse = mean_squared_error(y_test, y_pred)
+print(f"Model Mean Squared Error: {mse}")
+
+# Function to predict temperature with year, month, and location as input
+def predict_temperature(years, month, location):
+    try:
+        years = int(years)  # Convert years to integer if not already done
+    except ValueError:
+        print("Error: 'years' should be an integer.")
+        return None
+
+    try:
+        # Encode the location input
+        location_encoded = le.transform([location])[0]
+    except ValueError:
+        print(f"Error: The location '{location}' is not found in the dataset.")
+        return None
+
+    # Ensure 'year' is correctly extracted from the date column
+    max_year = int(data['year'].max())  # Explicitly cast to integer
+    future_year = max_year + years
+
+    # Get average humidity, pollution, and rainfall for the given location and month
+    location_data = data[(data['location'] == location_encoded) & (data['month'] == month)]
+    if location_data.empty:
+        print(f"No data available for location '{location}' in month {month}.")
+        return None
+
+    avg_humidity = location_data['humidity'].mean()
+    avg_pollution = location_data['pollution'].mean()
+    avg_rainfall = location_data['rainfall'].mean()
+
+    # Check if any averages are NaN (in case location_data was empty)
+    if pd.isna(avg_humidity) or pd.isna(avg_pollution) or pd.isna(avg_rainfall):
+        print("Data for the required location and month is insufficient for predictions.")
+        return None
+
+    # Predict
+    prediction = model.predict([[future_year, month, location_encoded, avg_humidity, avg_pollution, avg_rainfall]])
+    return prediction[0]
+
+# Example usage with input validation
+def get_valid_year_input():
+    while True:
+        years = input("Enter number of years into the future (e.g., 2): ")
+        try:
+            years = int(years)  # Ensure years is an integer
+            if years < 0:
+                print("Years must be a positive integer.")
+            else:
+                return years
+        except ValueError:
+            print("Input error: Please enter a valid integer for years.")
+
+def get_valid_month_input():
+    while True:
+        month = input("Enter month (1-12): ")
+        try:
+            month = int(month)  # Ensure month is an integer
+            if month < 1 or month > 12:
+                print("Month must be between 1 and 12.")
+            else:
+                return month
+        except ValueError:
+            print("Input error: Please enter a valid integer for the month.")
+
+def get_valid_location_input():
+    while True:
+        location = input("Enter location: ").strip()  # Remove any leading/trailing spaces
+        if location:
+            return location
+        else:
+            print("Location cannot be empty. Please enter a valid location.")
+
+# Example usage with input validation
+try:
+    years = get_valid_year_input()
+    month = get_valid_month_input()
+    location = get_valid_location_input()
+
+    predicted_temp = predict_temperature(years, month, location)
+    if predicted_temp is not None:
+        print(f"Predicted temperature in {years} years, {month:02d} month for {location}: {predicted_temp}")
+    else:
+        print("Prediction could not be made due to insufficient data.")
+except ValueError as ve:
+    print(f"Input error: {ve}")
